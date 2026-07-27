@@ -36,9 +36,11 @@ function App() {
   useEffect(() => { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js'); }, []);
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 1800); return () => clearTimeout(t); } }, [toast]);
 
-  const mastered = Object.keys(data.mastered).length;
+  const activeKana = kana.filter(k => data.script === 'both' || k.script === data.script);
+  const mastered = activeKana.filter(k => data.mastered[k.id]).length;
   const totalForScript = data.script === 'both' ? kana.length : kana.length / 2;
   const pct = Math.round(mastered / totalForScript * 100);
+  const scriptName = data.script === 'hiragana' ? 'Hiragana' : data.script === 'katakana' ? 'Katakana' : 'Mixte';
 
   function start(stageId, mode = 'quiz') {
     const pool = getStageKana(stageId, data.script);
@@ -112,15 +114,19 @@ function App() {
           <div className="eyebrow">日本語 • 5 MIN PAR JOUR</div>
           <h1>Les kana,<br/><em>ça va popper.</em></h1>
           <p>Reconnais, écoute, répète. Des sessions ultra-courtes pour mémoriser sans t'ennuyer.</p>
+          <div className="script-picker" aria-label="Alphabet à apprendre">
+            <button className={data.script === 'hiragana' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'hiragana' }))}><b>あ</b><span>Hiragana</span></button>
+            <button className={data.script === 'katakana' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'katakana' }))}><b>ア</b><span>Katakana</span></button>
+            <button className={data.script === 'both' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'both' }))}><b>あア</b><span>Mixte</span></button>
+          </div>
           <button className="primary big" onClick={() => start(stages.find(s => getStageKana(s.id, data.script).some(k => !data.mastered[k.id]))?.id || 'voyelles')}>Spammer sans limite <b>∞</b></button>
-          <div className="mascot" aria-hidden="true"><div className="face">あ</div><i>やった!</i></div>
         </section>
         <section className="progress-card">
           <div className="ring" style={{'--p': `${pct * 3.6}deg`}}><div><b>{mastered}</b><small>/ {totalForScript}</small></div></div>
-          <div><h2>Ta collection</h2><p>{pct ? `${pct}% des kana maîtrisés. Continue !` : 'Chaque bonne réponse fait grandir ta collection.'}</p></div>
+          <div><h2>Collection {scriptName}</h2><p>{pct ? `${pct}% du parcours maîtrisé. Continue !` : 'Chaque bonne réponse fait grandir ta collection.'}</p></div>
           <button className="icon-btn" onClick={() => setView('grid')} aria-label="Voir la collection">⌁</button>
         </section>
-        <div className="section-title"><div><span>PARCOURS</span><h2>Choisis ton niveau</h2></div><button onClick={() => setView('grid')}>Voir les 208</button></div>
+        <div className="section-title"><div><span>PARCOURS {scriptName.toUpperCase()}</span><h2>Choisis ton niveau</h2></div><button onClick={() => setView('grid')}>Voir les kana</button></div>
         <section className="path">
           {stages.map((s, i) => {
             const ks = getStageKana(s.id, data.script), done = ks.filter(k => data.mastered[k.id]).length;

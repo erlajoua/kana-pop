@@ -17,8 +17,13 @@ await page.evaluate(() => {
   localStorage.setItem('kana-pop-v1', JSON.stringify({ ...saved, sound: false }));
 });
 await page.reload({ waitUntil: 'networkidle' });
+await page.getByRole('button', { name: /Hiragana/i }).click();
 await page.getByRole('button', { name: /Spammer sans limite/i }).click();
 await page.locator('.kana-card').waitFor();
+const hiraganaChar = await page.locator('.kana-card span').innerText();
+if (kana.find(k => k.char === hiraganaChar)?.script !== 'hiragana') {
+  errors.push(`Le parcours Hiragana a affiché ${hiraganaChar}`);
+}
 const vowelChoices = await page.locator('.choices button').allTextContents();
 const allowedVowels = new Set(['a', 'i', 'u', 'e', 'o']);
 if (!vowelChoices.every(choice => allowedVowels.has(choice))) {
@@ -37,7 +42,15 @@ await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();
 await page.locator('.stage').filter({ hasText: 'Voyelles' }).click();
 await page.locator('.kana-card').waitFor();
-console.log('✓ boutons principal et Voyelles, réponse et question suivante');
+await page.getByRole('button', { name: '×' }).click();
+await page.getByRole('button', { name: /Retour au parcours/i }).click();
+await page.getByRole('button', { name: /Katakana/i }).click();
+await page.locator('.stage').filter({ hasText: 'Voyelles' }).click();
+const katakanaChar = await page.locator('.kana-card span').innerText();
+if (kana.find(k => k.char === katakanaChar)?.script !== 'katakana') {
+  errors.push(`Le parcours Katakana a affiché ${katakanaChar}`);
+}
+console.log('✓ parcours Hiragana et Katakana séparés, mode infini et enchaînement automatique');
 if (errors.length) console.log('errors=', errors);
 await browser.close();
 if (errors.length) process.exitCode = 1;
