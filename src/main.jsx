@@ -77,7 +77,7 @@ function App() {
   const choices = useMemo(() => {
     if (!current) return [];
     const pool = kana.filter(k => k.script === current.script && k.romaji !== current.romaji);
-    return shuffle([current.romaji, ...shuffle(pool).slice(0, 3)]);
+    return shuffle([current.romaji, ...shuffle(pool).slice(0, 3).map(k => k.romaji)]);
   }, [current]);
 
   return <div className="app">
