@@ -34,9 +34,9 @@ function App() {
   function start(stageId, mode = 'quiz') {
     const pool = getStageKana(stageId, data.script);
     const weak = pool.filter(k => !data.mastered[k.id]);
-    const cards = shuffle(weak.length >= 4 ? weak : pool).slice(0, 10);
+    const cards = shuffle(weak.length >= 4 ? weak : pool);
     setStage(stageId);
-    setSession({ mode, cards, index: 0, score: 0, answered: false, selected: null });
+    setSession({ mode: 'infinite', pool, cards, index: 0, score: 0, answered: false, selected: null, misses: {} });
     setView('play');
   }
 
@@ -45,7 +45,10 @@ function App() {
     const card = session.cards[session.index];
     const ok = choice === card.romaji;
     if (data.sound) speak(card.char);
-    setSession(s => ({ ...s, answered: true, selected: choice, score: s.score + (ok ? 1 : 0) }));
+    setSession(s => ({
+      ...s, answered: true, selected: choice, score: s.score + (ok ? 1 : 0),
+      misses: ok ? s.misses : { ...s.misses, [card.id]: (s.misses[card.id] || 0) + 1 }
+    }));
     setData(d => ({
       ...d, xp: d.xp + (ok ? 10 : 2),
       seen: { ...d.seen, [card.id]: (d.seen[card.id] || 0) + 1 },
@@ -55,10 +58,19 @@ function App() {
 
   function next() {
     if (session.index + 1 >= session.cards.length) {
-      const today = day();
-      setData(d => ({ ...d, streak: d.lastDay === today ? d.streak : d.streak + 1, lastDay: today }));
-      setView('result');
+      setSession(s => {
+        const retry = s.pool.filter(k => s.misses[k.id]);
+        const weak = s.pool.filter(k => !data.mastered[k.id]);
+        const refill = shuffle([...retry, ...weak, ...shuffle(s.pool)]).slice(0, Math.max(10, Math.min(20, s.pool.length)));
+        return { ...s, cards: [...s.cards, ...refill], index: s.index + 1, answered: false, selected: null };
+      });
     } else setSession(s => ({ ...s, index: s.index + 1, answered: false, selected: null }));
+  }
+
+  function finishSession() {
+    const today = day();
+    if (session?.index >= 4) setData(d => ({ ...d, streak: d.lastDay === today ? d.streak : d.streak + 1, lastDay: today }));
+    setView('result');
   }
 
   const current = session?.cards[session.index];
@@ -80,7 +92,7 @@ function App() {
           <div className="eyebrow">日本語 • 5 MIN PAR JOUR</div>
           <h1>Les kana,<br/><em>ça va popper.</em></h1>
           <p>Reconnais, écoute, répète. Des sessions ultra-courtes pour mémoriser sans t'ennuyer.</p>
-          <button className="primary big" onClick={() => start(stages.find(s => getStageKana(s.id, data.script).some(k => !data.mastered[k.id]))?.id || 'voyelles')}>Continuer <b>→</b></button>
+          <button className="primary big" onClick={() => start(stages.find(s => getStageKana(s.id, data.script).some(k => !data.mastered[k.id]))?.id || 'voyelles')}>Spammer sans limite <b>∞</b></button>
           <div className="mascot" aria-hidden="true"><div className="face">あ</div><i>やった!</i></div>
         </section>
         <section className="progress-card">
@@ -103,22 +115,22 @@ function App() {
       {view === 'grid' && <Grid data={data} setData={setData} back={() => setView('home')} />}
 
       {view === 'play' && current && <section className="play">
-        <div className="play-top"><button className="close" onClick={() => setView('home')}>×</button><div className="bar"><i style={{width:`${(session.index + 1) / session.cards.length * 100}%`}}/></div><span>{session.index + 1}/{session.cards.length}</span></div>
+        <div className="play-top"><button className="close" onClick={finishSession}>×</button><div className="bar"><i style={{width:`${((session.index % 10) + 1) * 10}%`}}/></div><span>∞ {session.index + 1}</span></div>
         <div className="prompt">Quel son fait ce kana ?</div>
         <button className="kana-card" onClick={() => speak(current.char)}><span>{current.char}</span><small>🔊 Écouter</small></button>
         <div className="choices">
           {choices.map(c => <button key={c} className={session.answered ? c === current.romaji ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
         </div>
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
-          {session.answered && <><div><b>{session.selected === current.romaji ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.char} • {current.pair} • {current.romaji}</span></div><button onClick={next}>{session.index + 1 === session.cards.length ? 'Résultats' : 'Suivant'} →</button></>}
+          {session.answered && <><div><b>{session.selected === current.romaji ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.char} • {current.pair} • {current.romaji}</span></div><button onClick={next}>Encore →</button></>}
         </div>
       </section>}
 
       {view === 'result' && <section className="result">
-        <div className="confetti">🎉</div><span>SESSION TERMINÉE</span><h1>{session.score}/{session.cards.length}</h1>
+        <div className="confetti">🎉</div><span>PAUSE BIEN MÉRITÉE</span><h1>{session.score}/{session.index + 1}</h1>
         <h2>{session.score >= 8 ? 'すごい！ Incroyable !' : session.score >= 5 ? 'Bien joué !' : 'Chaque essai compte !'}</h2>
-        <p>+{session.score * 10 + (session.cards.length - session.score) * 2} XP gagnés</p>
-        <button className="primary big" onClick={() => start(stage)}>Rejouer</button>
+        <p>{session.index + 1} kana révisés • le module n'est jamais terminé</p>
+        <button className="primary big" onClick={() => start(stage)}>Continuer à spammer ∞</button>
         <button className="text-btn" onClick={() => setView('home')}>Retour au parcours</button>
       </section>}
     </main>
