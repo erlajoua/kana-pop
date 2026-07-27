@@ -12,6 +12,11 @@ page.on('console', message => {
   if (message.type() === 'error') errors.push(message.text());
 });
 await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await page.evaluate(() => {
+  const saved = JSON.parse(localStorage.getItem('kana-pop-v1') || '{}');
+  localStorage.setItem('kana-pop-v1', JSON.stringify({ ...saved, sound: false }));
+});
+await page.reload({ waitUntil: 'networkidle' });
 await page.getByRole('button', { name: /Spammer sans limite/i }).click();
 await page.locator('.kana-card').waitFor();
 const vowelChoices = await page.locator('.choices button').allTextContents();

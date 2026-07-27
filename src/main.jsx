@@ -12,8 +12,17 @@ const day = () => new Date().toISOString().slice(0, 10);
 function speak(text) {
   if (!('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ja-JP'; u.rate = .75;
+  const voices = speechSynthesis.getVoices();
+  const japaneseVoices = voices.filter(v => v.lang?.toLowerCase().startsWith('ja'));
+  const naturalVoice = japaneseVoices.find(v =>
+    /enhanced|premium|kyoko|nanami|haruka|google|microsoft/i.test(v.name)
+  ) || japaneseVoices.find(v => v.localService) || japaneseVoices[0];
+  const u = new SpeechSynthesisUtterance(`${text}。 ${text}。`);
+  u.lang = 'ja-JP';
+  u.rate = .68;
+  u.pitch = 1.04;
+  u.volume = 1;
+  if (naturalVoice) u.voice = naturalVoice;
   speechSynthesis.speak(u);
 }
 
@@ -44,7 +53,6 @@ function App() {
     if (session.answered) return;
     const card = session.cards[session.index];
     const ok = choice === card.romaji;
-    if (data.sound) speak(card.char);
     setSession(s => ({
       ...s, answered: true, selected: choice, score: s.score + (ok ? 1 : 0),
       misses: ok ? s.misses : { ...s.misses, [card.id]: (s.misses[card.id] || 0) + 1 }
@@ -54,6 +62,7 @@ function App() {
       seen: { ...d.seen, [card.id]: (d.seen[card.id] || 0) + 1 },
       mastered: ok && (d.seen[card.id] || 0) >= 1 ? { ...d.mastered, [card.id]: true } : d.mastered
     }));
+    if (data.sound) setTimeout(() => speak(card.char), 0);
   }
 
   function next() {
