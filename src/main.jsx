@@ -189,7 +189,7 @@ function App() {
             </div>
           </>}
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
-          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.char} • {current.pair} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
+          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.script === 'hiragana' ? `Hiragana ${current.char} • Katakana ${current.pair}` : `Katakana ${current.char} • Hiragana ${current.pair}`} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
         </div>
       </section>}
 
@@ -250,13 +250,21 @@ function DrawChallenge({ card, answered, onGrade }) {
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
   }
 
+  const scriptLabel = card.script === 'hiragana' ? 'hiragana' : 'katakana';
+  const otherLabel = card.script === 'hiragana' ? 'katakana' : 'hiragana';
+
   return <div className="draw-challenge">
-    <div className="draw-prompt">Dessine le kana qui fait <button onClick={() => speak(card.char)}>🔊 <b>{card.romaji}</b></button></div>
+    <div className="draw-prompt"><span>Dessine en <strong>{scriptLabel}</strong></span><button onClick={() => speak(card.char)}>🔊 Son : <b>{card.romaji}</b></button></div>
     <div className="draw-board">
       <canvas ref={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={() => setDrawing(false)} onPointerCancel={() => setDrawing(false)} />
       <div className="guide-lines" aria-hidden="true" />
       {revealed && <div className="draw-answer">{card.char}</div>}
     </div>
+    {revealed && <div className="writing-summary">
+      <div className="expected"><small>À DESSINER • {scriptLabel}</small><b>{card.char}</b></div>
+      <span>↔</span>
+      <div><small>AUTRE FORME • {otherLabel}</small><b>{card.pair}</b></div>
+    </div>}
     {!revealed
       ? <div className="draw-actions"><button onClick={clear}>Effacer</button><button className="reveal" onClick={() => setRevealed(true)}>Voir le modèle</button></div>
       : !answered && <div className="self-grade"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true)}>Je l'ai ✓</button></div>}
