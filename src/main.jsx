@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { kana, stages, getStageKana } from './kana.js';
+import { recognizeKana } from './recognizer.js';
 import './styles.css';
 
 const STORE = 'kana-pop-v1';
@@ -211,6 +212,8 @@ function DrawChallenge({ card, answered, allowEither, onGrade }) {
   const canvasRef = useRef(null);
   const [drawing, setDrawing] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [recognizing, setRecognizing] = useState(false);
+  const [recognition, setRecognition] = useState(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -249,6 +252,23 @@ function DrawChallenge({ card, answered, allowEither, onGrade }) {
   function clear() {
     const canvas = canvasRef.current;
     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    setRecognition(null);
+    setRevealed(false);
+  }
+  async function analyze() {
+    if (recognizing || answered) return;
+    setRecognizing(true);
+    const candidates = [
+      { char: hiragana, script: 'hiragana' },
+      { char: katakana, script: 'katakana' }
+    ];
+    const result = await recognizeKana(canvasRef.current, candidates);
+    setRecognition(result);
+    setRecognizing(false);
+    if (result.status !== 'recognized') return;
+    setRevealed(true);
+    const accepted = allowEither || result.script === card.script;
+    setTimeout(() => onGrade(accepted, result.script), 350);
   }
 
   const scriptLabel = card.script === 'hiragana' ? 'hiragana' : 'katakana';
@@ -260,18 +280,19 @@ function DrawChallenge({ card, answered, allowEither, onGrade }) {
     <div className="draw-board">
       <canvas ref={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={() => setDrawing(false)} onPointerCancel={() => setDrawing(false)} />
       <div className="guide-lines" aria-hidden="true" />
-      {revealed && <div className={`draw-answer ${allowEither ? 'both' : ''}`}>{allowEither ? `${hiragana}・${katakana}` : card.char}</div>}
+      {revealed && <div className="draw-answer">{recognition?.char || card.char}</div>}
     </div>
+    {recognition?.status === 'empty' && <div className="recognition-message retry">Dessine quelque chose avant de vérifier.</div>}
+    {recognition?.status === 'uncertain' && <div className="recognition-message retry">Je ne reconnais pas encore ce tracé. Efface et réessaie.</div>}
+    {recognition?.status === 'recognized' && <div className={`recognition-message ${allowEither || recognition.script === card.script ? 'success' : 'failure'}`}>
+      Détecté : <b>{recognition.char}</b> en {recognition.script} <small>{recognition.confidence}% de confiance</small>
+    </div>}
     {revealed && <div className="writing-summary">
       <div className={allowEither || card.script === 'hiragana' ? 'expected' : ''}><small>{allowEither ? 'CHOIX VALIDE' : 'À DESSINER'} • hiragana</small><b>{hiragana}</b></div>
       <span>↔</span>
       <div className={allowEither || card.script === 'katakana' ? 'expected' : ''}><small>{allowEither ? 'CHOIX VALIDE' : 'À DESSINER'} • katakana</small><b>{katakana}</b></div>
     </div>}
-    {!revealed
-      ? <div className="draw-actions"><button onClick={clear}>Effacer</button><button className="reveal" onClick={() => setRevealed(true)}>Voir le modèle</button></div>
-      : !answered && (allowEither
-        ? <div className="self-grade three"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true, 'hiragana')}>J’ai fait {hiragana}</button><button className="got-it" onClick={() => onGrade(true, 'katakana')}>J’ai fait {katakana}</button></div>
-        : <div className="self-grade"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true, scriptLabel)}>Je l'ai ✓</button></div>)}
+    {!revealed && <div className="draw-actions"><button onClick={clear}>Effacer</button><button className="reveal" onClick={analyze} disabled={recognizing}>{recognizing ? 'Analyse…' : 'Vérifier mon dessin'}</button></div>}
   </div>;
 }
 
