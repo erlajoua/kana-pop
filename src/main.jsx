@@ -76,9 +76,13 @@ function App() {
   const current = session?.cards[session.index];
   const choices = useMemo(() => {
     if (!current) return [];
-    const pool = kana.filter(k => k.script === current.script && k.romaji !== current.romaji);
-    return shuffle([current.romaji, ...shuffle(pool).slice(0, 3).map(k => k.romaji)]);
-  }, [current]);
+    const relevantRomaji = [...new Set(
+      session.pool
+        .filter(k => k.romaji !== current.romaji)
+        .map(k => k.romaji)
+    )];
+    return shuffle([current.romaji, ...shuffle(relevantRomaji).slice(0, 3)]);
+  }, [current, session?.pool]);
 
   return <div className="app">
     <header>

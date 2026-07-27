@@ -13,6 +13,14 @@ page.on('console', message => {
 await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: /Spammer sans limite/i }).click();
 await page.locator('.kana-card').waitFor();
+const vowelChoices = await page.locator('.choices button').allTextContents();
+const allowedVowels = new Set(['a', 'i', 'u', 'e', 'o']);
+if (!vowelChoices.every(choice => allowedVowels.has(choice))) {
+  errors.push(`Le module Voyelles contient des choix hors module : ${vowelChoices.join(', ')}`);
+}
+if (new Set(vowelChoices).size !== 4) {
+  errors.push(`Les quatre choix Voyelles doivent être distincts : ${vowelChoices.join(', ')}`);
+}
 await page.locator('.choices button').first().click();
 await page.getByRole('button', { name: /Encore/i }).click();
 await page.locator('.kana-card').waitFor();
