@@ -17,9 +17,9 @@ function speak(text) {
   const naturalVoice = japaneseVoices.find(v =>
     /enhanced|premium|kyoko|nanami|haruka|google|microsoft/i.test(v.name)
   ) || japaneseVoices.find(v => v.localService) || japaneseVoices[0];
-  const u = new SpeechSynthesisUtterance(`${text}。 ${text}。`);
+  const u = new SpeechSynthesisUtterance(`${text}。`);
   u.lang = 'ja-JP';
-  u.rate = .68;
+  u.rate = .62;
   u.pitch = 1.04;
   u.volume = 1;
   if (naturalVoice) u.voice = naturalVoice;
