@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { kana } from '../src/kana.js';
 
 const browser = await chromium.launch({
   headless: true,
@@ -21,8 +22,11 @@ if (!vowelChoices.every(choice => allowedVowels.has(choice))) {
 if (new Set(vowelChoices).size !== 4) {
   errors.push(`Les quatre choix Voyelles doivent être distincts : ${vowelChoices.join(', ')}`);
 }
-await page.locator('.choices button').first().click();
-await page.getByRole('button', { name: /Encore/i }).click();
+const firstChar = await page.locator('.kana-card span').innerText();
+const rightAnswer = kana.find(k => k.char === firstChar)?.romaji;
+await page.locator('.choices button').filter({ hasText: new RegExp(`^${rightAnswer}$`) }).click();
+await page.getByText('Ça repart…').waitFor();
+await page.getByText('∞ 2', { exact: true }).waitFor({ timeout: 2000 });
 await page.locator('.kana-card').waitFor();
 await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();

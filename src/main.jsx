@@ -74,6 +74,13 @@ function App() {
   }
 
   const current = session?.cards[session.index];
+  const isCorrect = Boolean(session?.answered && current && session.selected === current.romaji);
+  useEffect(() => {
+    if (!isCorrect) return;
+    const timer = setTimeout(next, 700);
+    return () => clearTimeout(timer);
+  }, [isCorrect, session?.index]);
+
   const choices = useMemo(() => {
     if (!current) return [];
     const relevantRomaji = [...new Set(
@@ -126,7 +133,7 @@ function App() {
           {choices.map(c => <button key={c} className={session.answered ? c === current.romaji ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
         </div>
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
-          {session.answered && <><div><b>{session.selected === current.romaji ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.char} • {current.pair} • {current.romaji}</span></div><button onClick={next}>Encore →</button></>}
+          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.char} • {current.pair} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
         </div>
       </section>}
 
