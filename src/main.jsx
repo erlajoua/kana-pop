@@ -29,7 +29,8 @@ function speak(text) {
 function App() {
   const [data, setData] = useState(load);
   const [view, setView] = useState('home');
-  const [stage, setStage] = useState('voyelles');
+  const [stage, setStage] = useState(['voyelles']);
+  const [selectedStages, setSelectedStages] = useState(['voyelles']);
   const [session, setSession] = useState(null);
   const [toast, setToast] = useState('');
   useEffect(() => localStorage.setItem(STORE, JSON.stringify(data)), [data]);
@@ -42,11 +43,12 @@ function App() {
   const pct = Math.round(mastered / totalForScript * 100);
   const scriptName = data.script === 'hiragana' ? 'Hiragana' : data.script === 'katakana' ? 'Katakana' : 'Mixte';
 
-  function start(stageId, mode = 'quiz') {
-    const pool = getStageKana(stageId, data.script);
+  function start(stageIds = selectedStages) {
+    const ids = Array.isArray(stageIds) ? stageIds : [stageIds];
+    const pool = ids.flatMap(id => getStageKana(id, data.script));
     const weak = pool.filter(k => !data.mastered[k.id]);
     const cards = shuffle(weak.length >= 4 ? weak : pool);
-    setStage(stageId);
+    setStage(ids);
     setSession({ mode: 'infinite', pool, cards, index: 0, score: 0, answered: false, selected: null, misses: {} });
     setView('play');
   }
@@ -91,6 +93,25 @@ function App() {
     const timer = setTimeout(next, 700);
     return () => clearTimeout(timer);
   }, [isCorrect, session?.index]);
+  useEffect(() => {
+    if (view !== 'play' || !session?.answered) return;
+    const handleEnter = event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        next();
+      }
+    };
+    window.addEventListener('keydown', handleEnter);
+    return () => window.removeEventListener('keydown', handleEnter);
+  }, [view, session?.answered, session?.index]);
+
+  function toggleStage(stageId) {
+    setSelectedStages(current =>
+      current.includes(stageId)
+        ? current.length === 1 ? current : current.filter(id => id !== stageId)
+        : [...current, stageId]
+    );
+  }
 
   const choices = useMemo(() => {
     if (!current) return [];
@@ -119,7 +140,7 @@ function App() {
             <button className={data.script === 'katakana' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'katakana' }))}><b>ア</b><span>Katakana</span></button>
             <button className={data.script === 'both' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'both' }))}><b>あア</b><span>Mixte</span></button>
           </div>
-          <button className="primary big" onClick={() => start(stages.find(s => getStageKana(s.id, data.script).some(k => !data.mastered[k.id]))?.id || 'voyelles')}>Spammer sans limite <b>∞</b></button>
+          <button className="primary big" onClick={() => start()}>Spammer la sélection <b>∞</b></button>
         </section>
         <section className="progress-card">
           <div className="ring" style={{'--p': `${pct * 3.6}deg`}}><div><b>{mastered}</b><small>/ {totalForScript}</small></div></div>
@@ -130,11 +151,13 @@ function App() {
         <section className="path">
           {stages.map((s, i) => {
             const ks = getStageKana(s.id, data.script), done = ks.filter(k => data.mastered[k.id]).length;
-            return <button className="stage" key={s.id} onClick={() => start(s.id)}>
+            const selected = selectedStages.includes(s.id);
+            return <button className={`stage ${selected ? 'selected' : ''}`} key={s.id} onClick={() => toggleStage(s.id)} aria-pressed={selected}>
               <div className="stage-icon">{s.emoji}</div><div className="stage-copy"><small>ÉTAPE {i + 1}</small><h3>{s.label}</h3><span>{done}/{ks.length} maîtrisés</span></div>
-              <div className="mini-ring">{Math.round(done / ks.length * 100)}%</div>
+              <div className="stage-check">{selected ? '✓' : '+'}</div>
             </button>;
           })}
+          <button className="primary selection-cta" onClick={() => start()}>{selectedStages.length === 1 ? 'Réviser ce module' : `Réviser ${selectedStages.length} modules`} <b>∞</b></button>
         </section>
       </>}
 

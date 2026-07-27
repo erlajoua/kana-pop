@@ -18,7 +18,7 @@ await page.evaluate(() => {
 });
 await page.reload({ waitUntil: 'networkidle' });
 await page.getByRole('button', { name: /Hiragana/i }).click();
-await page.getByRole('button', { name: /Spammer sans limite/i }).click();
+await page.getByRole('button', { name: /Spammer la sélection/i }).click();
 await page.locator('.kana-card').waitFor();
 const hiraganaChar = await page.locator('.kana-card span').innerText();
 if (kana.find(k => k.char === hiraganaChar)?.script !== 'hiragana') {
@@ -38,14 +38,20 @@ await page.locator('.choices button').filter({ hasText: new RegExp(`^${rightAnsw
 await page.getByText('Ça repart…').waitFor();
 await page.getByText('∞ 2', { exact: true }).waitFor({ timeout: 2000 });
 await page.locator('.kana-card').waitFor();
+const secondChar = await page.locator('.kana-card span').innerText();
+const secondAnswer = kana.find(k => k.char === secondChar)?.romaji;
+await page.locator('.choices button').filter({ hasNotText: new RegExp(`^${secondAnswer}$`) }).first().click();
+await page.keyboard.press('Enter');
+await page.getByText('∞ 3', { exact: true }).waitFor({ timeout: 2000 });
 await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();
-await page.locator('.stage').filter({ hasText: 'Voyelles' }).click();
+await page.locator('.stage').filter({ hasText: 'K & S' }).click();
+await page.getByRole('button', { name: /Réviser 2 modules/i }).click();
 await page.locator('.kana-card').waitFor();
 await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();
 await page.getByRole('button', { name: /Katakana/i }).click();
-await page.locator('.stage').filter({ hasText: 'Voyelles' }).click();
+await page.getByRole('button', { name: /Réviser 2 modules/i }).click();
 const katakanaChar = await page.locator('.kana-card span').innerText();
 if (kana.find(k => k.char === katakanaChar)?.script !== 'katakana') {
   errors.push(`Le parcours Katakana a affiché ${katakanaChar}`);
