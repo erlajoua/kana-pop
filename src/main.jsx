@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { kana, stages, getStageKana } from './kana.js';
 import './styles.css';
@@ -31,6 +31,7 @@ function App() {
   const [view, setView] = useState('home');
   const [stage, setStage] = useState(['voyelles']);
   const [selectedStages, setSelectedStages] = useState(['voyelles']);
+  const [trainingMode, setTrainingMode] = useState('quiz');
   const [session, setSession] = useState(null);
   const [toast, setToast] = useState('');
   useEffect(() => localStorage.setItem(STORE, JSON.stringify(data)), [data]);
@@ -49,7 +50,7 @@ function App() {
     const weak = pool.filter(k => !data.mastered[k.id]);
     const cards = shuffle(weak.length >= 4 ? weak : pool);
     setStage(ids);
-    setSession({ mode: 'infinite', pool, cards, index: 0, score: 0, answered: false, selected: null, misses: {} });
+    setSession({ mode: trainingMode, pool, cards, index: 0, score: 0, answered: false, selected: null, misses: {} });
     setView('play');
   }
 
@@ -67,6 +68,11 @@ function App() {
       mastered: ok && (d.seen[card.id] || 0) >= 1 ? { ...d.mastered, [card.id]: true } : d.mastered
     }));
     if (data.sound) setTimeout(() => speak(card.char), 0);
+  }
+
+  function gradeDrawing(ok) {
+    if (!current || session.answered) return;
+    answer(ok ? current.romaji : '__drawing_retry__');
   }
 
   function next() {
@@ -87,6 +93,9 @@ function App() {
   }
 
   const current = session?.cards[session.index];
+  const challengeMode = session?.mode === 'mixed'
+    ? (session.index % 2 === 0 ? 'quiz' : 'draw')
+    : session?.mode;
   const isCorrect = Boolean(session?.answered && current && session.selected === current.romaji);
   useEffect(() => {
     if (!isCorrect) return;
@@ -140,6 +149,11 @@ function App() {
             <button className={data.script === 'katakana' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'katakana' }))}><b>ア</b><span>Katakana</span></button>
             <button className={data.script === 'both' ? 'active' : ''} onClick={() => setData(d => ({ ...d, script: 'both' }))}><b>あア</b><span>Mixte</span></button>
           </div>
+          <div className="mode-picker" aria-label="Type d'exercice">
+            <button className={trainingMode === 'quiz' ? 'active' : ''} onClick={() => setTrainingMode('quiz')}><b>👀</b><span>Reconnaître</span></button>
+            <button className={trainingMode === 'draw' ? 'active' : ''} onClick={() => setTrainingMode('draw')}><b>✍️</b><span>Écrire</span></button>
+            <button className={trainingMode === 'mixed' ? 'active' : ''} onClick={() => setTrainingMode('mixed')}><b>⚡</b><span>Les deux</span></button>
+          </div>
           <button className="primary big" onClick={() => start()}>Spammer la sélection <b>∞</b></button>
         </section>
         <section className="progress-card">
@@ -165,11 +179,15 @@ function App() {
 
       {view === 'play' && current && <section className="play">
         <div className="play-top"><button className="close" onClick={finishSession}>×</button><div className="bar"><i style={{width:`${((session.index % 10) + 1) * 10}%`}}/></div><span>∞ {session.index + 1}</span></div>
-        <div className="prompt">Quel son fait ce kana ?</div>
-        <button className="kana-card" onClick={() => speak(current.char)}><span>{current.char}</span><small>🔊 Écouter</small></button>
-        <div className="choices">
-          {choices.map(c => <button key={c} className={session.answered ? c === current.romaji ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
-        </div>
+        {challengeMode === 'draw'
+          ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} onGrade={gradeDrawing} />
+          : <>
+            <div className="prompt">Quel son fait ce kana ?</div>
+            <button className="kana-card" onClick={() => speak(current.char)}><span>{current.char}</span><small>🔊 Écouter</small></button>
+            <div className="choices">
+              {choices.map(c => <button key={c} className={session.answered ? c === current.romaji ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
+            </div>
+          </>}
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
           {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.char} • {current.pair} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
         </div>
@@ -185,6 +203,63 @@ function App() {
     </main>
     {view === 'home' && <nav><button className="active">⌂<span>Parcours</span></button><button onClick={() => setView('grid')}>あ<span>Kana</span></button><button onClick={() => { setToast('Objectif : une session par jour 🔥'); }}>◎<span>Objectif</span></button></nav>}
     {toast && <div className="toast">{toast}</div>}
+  </div>;
+}
+
+function DrawChallenge({ card, answered, onGrade }) {
+  const canvasRef = useRef(null);
+  const [drawing, setDrawing] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ratio = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * ratio;
+    canvas.height = rect.height * ratio;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = '#202137';
+  }, []);
+
+  const point = event => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+  function begin(event) {
+    if (revealed || answered) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const ctx = canvasRef.current.getContext('2d');
+    const p = point(event);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    setDrawing(true);
+  }
+  function move(event) {
+    if (!drawing || revealed || answered) return;
+    const p = point(event);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+  function clear() {
+    const canvas = canvasRef.current;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  return <div className="draw-challenge">
+    <div className="draw-prompt">Dessine le kana qui fait <button onClick={() => speak(card.char)}>🔊 <b>{card.romaji}</b></button></div>
+    <div className="draw-board">
+      <canvas ref={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={() => setDrawing(false)} onPointerCancel={() => setDrawing(false)} />
+      <div className="guide-lines" aria-hidden="true" />
+      {revealed && <div className="draw-answer">{card.char}</div>}
+    </div>
+    {!revealed
+      ? <div className="draw-actions"><button onClick={clear}>Effacer</button><button className="reveal" onClick={() => setRevealed(true)}>Voir le modèle</button></div>
+      : !answered && <div className="self-grade"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true)}>Je l'ai ✓</button></div>}
   </div>;
 }
 

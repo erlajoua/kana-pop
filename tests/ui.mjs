@@ -56,7 +56,20 @@ const katakanaChar = await page.locator('.kana-card span').innerText();
 if (kana.find(k => k.char === katakanaChar)?.script !== 'katakana') {
   errors.push(`Le parcours Katakana a affiché ${katakanaChar}`);
 }
-console.log('✓ parcours Hiragana et Katakana séparés, mode infini et enchaînement automatique');
+await page.getByRole('button', { name: '×' }).click();
+await page.getByRole('button', { name: /Retour au parcours/i }).click();
+await page.getByRole('button', { name: /Écrire/i }).click();
+await page.getByRole('button', { name: /Spammer la sélection/i }).click();
+await page.locator('canvas').waitFor();
+const board = await page.locator('canvas').boundingBox();
+await page.mouse.move(board.x + 70, board.y + 70);
+await page.mouse.down();
+await page.mouse.move(board.x + 180, board.y + 180);
+await page.mouse.up();
+await page.getByRole('button', { name: /Voir le modèle/i }).click();
+await page.getByRole('button', { name: /Je l'ai/i }).click();
+await page.getByText('Ça repart…').waitFor();
+console.log('✓ parcours séparés, modules combinés, touche Entrée et mode dessin canvas');
 if (errors.length) console.log('errors=', errors);
 await browser.close();
 if (errors.length) process.exitCode = 1;
