@@ -62,20 +62,19 @@ await page.getByRole('button', { name: /Mixte/i }).click();
 await page.getByRole('button', { name: /Écrire/i }).click();
 await page.getByRole('button', { name: /Spammer la sélection/i }).click();
 await page.locator('canvas').waitFor();
-await page.getByText(/Dessine en (hiragana|katakana)/i).waitFor();
+await page.getByText(/Hiragana ou katakana/i).waitFor();
 const board = await page.locator('canvas').boundingBox();
 await page.mouse.move(board.x + 70, board.y + 70);
 await page.mouse.down();
 await page.mouse.move(board.x + 180, board.y + 180);
 await page.mouse.up();
 await page.getByRole('button', { name: /Voir le modèle/i }).click();
-const expectedDraw = await page.locator('.draw-answer').innerText();
-const expectedKana = kana.find(k => k.char === expectedDraw);
 const summary = await page.locator('.writing-summary').innerText();
-if (!summary.includes(expectedKana.pair) || !summary.toLowerCase().includes(expectedKana.script)) {
-  errors.push(`Le bilan dessin ne montre pas les deux écritures pour ${expectedDraw}`);
+if (!summary.toLowerCase().includes('hiragana') || !summary.toLowerCase().includes('katakana')) {
+  errors.push('Le bilan dessin Mixte ne montre pas les deux écritures');
 }
-await page.getByRole('button', { name: /Je l'ai/i }).click();
+await page.getByRole('button', { name: /J’ai fait/ }).nth(1).click();
+await page.getByText(/Tu as dessiné en katakana/i).waitFor();
 await page.getByText('Ça repart…').waitFor();
 console.log('✓ parcours séparés, modules combinés, touche Entrée et mode dessin canvas');
 if (errors.length) console.log('errors=', errors);

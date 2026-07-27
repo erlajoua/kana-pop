@@ -54,12 +54,13 @@ function App() {
     setView('play');
   }
 
-  function answer(choice) {
+  function answer(choice, meta = {}) {
     if (session.answered) return;
     const card = session.cards[session.index];
     const ok = choice === card.romaji;
     setSession(s => ({
       ...s, answered: true, selected: choice, score: s.score + (ok ? 1 : 0),
+      drawnScript: meta.drawnScript || null,
       misses: ok ? s.misses : { ...s.misses, [card.id]: (s.misses[card.id] || 0) + 1 }
     }));
     setData(d => ({
@@ -70,9 +71,9 @@ function App() {
     if (data.sound) setTimeout(() => speak(card.char), 0);
   }
 
-  function gradeDrawing(ok) {
+  function gradeDrawing(ok, drawnScript = null) {
     if (!current || session.answered) return;
-    answer(ok ? current.romaji : '__drawing_retry__');
+    answer(ok ? current.romaji : '__drawing_retry__', { drawnScript });
   }
 
   function next() {
@@ -180,7 +181,7 @@ function App() {
       {view === 'play' && current && <section className="play">
         <div className="play-top"><button className="close" onClick={finishSession}>×</button><div className="bar"><i style={{width:`${((session.index % 10) + 1) * 10}%`}}/></div><span>∞ {session.index + 1}</span></div>
         {challengeMode === 'draw'
-          ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} onGrade={gradeDrawing} />
+          ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} allowEither={data.script === 'both'} onGrade={gradeDrawing} />
           : <>
             <div className="prompt">Quel son fait ce kana ?</div>
             <button className="kana-card" onClick={() => speak(current.char)}><span>{current.char}</span><small>🔊 Écouter</small></button>
@@ -189,7 +190,7 @@ function App() {
             </div>
           </>}
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
-          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{current.script === 'hiragana' ? `Hiragana ${current.char} • Katakana ${current.pair}` : `Katakana ${current.char} • Hiragana ${current.pair}`} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
+          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{session.drawnScript ? `Tu as dessiné en ${session.drawnScript} • ` : ''}{current.script === 'hiragana' ? `Hiragana ${current.char} • Katakana ${current.pair}` : `Katakana ${current.char} • Hiragana ${current.pair}`} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
         </div>
       </section>}
 
@@ -206,7 +207,7 @@ function App() {
   </div>;
 }
 
-function DrawChallenge({ card, answered, onGrade }) {
+function DrawChallenge({ card, answered, allowEither, onGrade }) {
   const canvasRef = useRef(null);
   const [drawing, setDrawing] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -251,23 +252,26 @@ function DrawChallenge({ card, answered, onGrade }) {
   }
 
   const scriptLabel = card.script === 'hiragana' ? 'hiragana' : 'katakana';
-  const otherLabel = card.script === 'hiragana' ? 'katakana' : 'hiragana';
+  const hiragana = card.script === 'hiragana' ? card.char : card.pair;
+  const katakana = card.script === 'katakana' ? card.char : card.pair;
 
   return <div className="draw-challenge">
-    <div className="draw-prompt"><span>Dessine en <strong>{scriptLabel}</strong></span><button onClick={() => speak(card.char)}>🔊 Son : <b>{card.romaji}</b></button></div>
+    <div className="draw-prompt"><span>{allowEither ? <><strong>Hiragana ou katakana</strong> acceptés</> : <>Dessine en <strong>{scriptLabel}</strong></>}</span><button onClick={() => speak(card.char)}>🔊 Son : <b>{card.romaji}</b></button></div>
     <div className="draw-board">
       <canvas ref={canvasRef} onPointerDown={begin} onPointerMove={move} onPointerUp={() => setDrawing(false)} onPointerCancel={() => setDrawing(false)} />
       <div className="guide-lines" aria-hidden="true" />
-      {revealed && <div className="draw-answer">{card.char}</div>}
+      {revealed && <div className={`draw-answer ${allowEither ? 'both' : ''}`}>{allowEither ? `${hiragana}・${katakana}` : card.char}</div>}
     </div>
     {revealed && <div className="writing-summary">
-      <div className="expected"><small>À DESSINER • {scriptLabel}</small><b>{card.char}</b></div>
+      <div className={allowEither || card.script === 'hiragana' ? 'expected' : ''}><small>{allowEither ? 'CHOIX VALIDE' : 'À DESSINER'} • hiragana</small><b>{hiragana}</b></div>
       <span>↔</span>
-      <div><small>AUTRE FORME • {otherLabel}</small><b>{card.pair}</b></div>
+      <div className={allowEither || card.script === 'katakana' ? 'expected' : ''}><small>{allowEither ? 'CHOIX VALIDE' : 'À DESSINER'} • katakana</small><b>{katakana}</b></div>
     </div>}
     {!revealed
       ? <div className="draw-actions"><button onClick={clear}>Effacer</button><button className="reveal" onClick={() => setRevealed(true)}>Voir le modèle</button></div>
-      : !answered && <div className="self-grade"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true)}>Je l'ai ✓</button></div>}
+      : !answered && (allowEither
+        ? <div className="self-grade three"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true, 'hiragana')}>J’ai fait {hiragana}</button><button className="got-it" onClick={() => onGrade(true, 'katakana')}>J’ai fait {katakana}</button></div>
+        : <div className="self-grade"><button onClick={() => onGrade(false)}>À revoir</button><button className="got-it" onClick={() => onGrade(true, scriptLabel)}>Je l'ai ✓</button></div>)}
   </div>;
 }
 
