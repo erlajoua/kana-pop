@@ -19,9 +19,9 @@ async function readCard() {
   const face = await page.locator('.kana-card span').innerText();
   const choices = await page.locator('.choices button').allTextContents();
   const reverse = /Quel kana/.test(prompt);
-  const word = words.find(w => w.char === face);
+  const word = words.find(w => w.char === face) || words.find(w => w.fr === face);
   const answer = word
-    ? /Que veut dire/.test(prompt) ? word.fr : word.romaji
+    ? /Que veut dire/.test(prompt) ? word.fr : /s.écrit/.test(prompt) ? word.char : word.romaji
     : reverse ? choices.find(c => kana.find(k => k.char === c)?.romaji === face)
       : kana.find(k => k.char === face)?.romaji;
   return { prompt, face, choices, reverse, word, answer, shownKana: reverse ? choices : [face] };
@@ -115,11 +115,13 @@ await page.locator('.mode-hint').waitFor();
 await page.getByRole('button', { name: /Réviser 2 modules/i }).click();
 await page.locator('.kana-card.word').waitFor();
 const allowedSounds = new Set(['a', 'i', 'u', 'e', 'o', 'ka', 'ki', 'ku', 'ke', 'ko', 'sa', 'shi', 'su', 'se', 'so']);
-for (let i = 0; i < 6; i++) {
+const seenAsks = new Set();
+for (let i = 0; i < 18; i++) {
   await page.locator('.kana-card').waitFor();
   const card = await readCard();
   await checkCardFits(`mot ${card.face}`);
   if (!card.word) { errors.push(`Mot inconnu affiché : ${card.face}`); break; }
+  seenAsks.add(card.prompt);
   if (!card.word.sounds.every(s => allowedSounds.has(s))) {
     errors.push(`${card.word.char} utilise des kana hors des modules choisis`);
   }
@@ -130,6 +132,9 @@ for (let i = 0; i < 6; i++) {
     errors.push(`Le rappel du mot ${card.word.char} manque sa lecture ou sa traduction : ${feedback}`);
   }
   await page.getByText(`∞ ${i + 2}`, { exact: true }).waitFor({ timeout: 2000 });
+}
+if (seenAsks.size !== 3) {
+  errors.push(`Le module Mots doit poser les 3 types de question, vu : ${[...seenAsks].join(' / ')}`);
 }
 
 console.log('✓ parcours séparés, questions dans les deux sens, module Mots et mode dessin canvas');

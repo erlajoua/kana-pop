@@ -9,9 +9,10 @@ const STORE = 'kana-pop-v1';
 const defaults = { xp: 0, streak: 0, lastDay: '', seen: {}, mastered: {}, script: 'both', sound: true };
 const load = () => { try { return { ...defaults, ...JSON.parse(localStorage.getItem(STORE)) }; } catch { return defaults; } };
 const shuffle = a => [...a].sort(() => Math.random() - .5);
-// Chaque carte tire son sens de question : kana → son, son → kana, mot → lecture ou sens.
+// Chaque carte tire son sens de question : kana ↔ son, et mot → lecture, → sens ou ← français.
+const wordAsks = ['reading', 'reading', 'meaning', 'word'];
 const decorate = (cards, mode) => mode === 'words'
-  ? cards.map(w => ({ ...w, ask: Math.random() < .35 ? 'meaning' : 'reading' }))
+  ? cards.map(w => ({ ...w, ask: wordAsks[Math.floor(Math.random() * wordAsks.length)] }))
   : cards.map(k => ({ ...k, dir: Math.random() < .5 ? 'toKana' : 'toRomaji' }));
 const day = () => new Date().toISOString().slice(0, 10);
 
@@ -111,17 +112,22 @@ function App() {
     : session?.mode;
   const isWordSession = session?.mode === 'words';
   const direction = isWordSession
-    ? (current?.ask === 'meaning' ? 'toMeaning' : 'toRomaji')
+    ? current?.ask === 'meaning' ? 'toMeaning' : current?.ask === 'word' ? 'toWord' : 'toRomaji'
     : challengeMode === 'draw' || current?.dir !== 'toKana' ? 'toRomaji' : 'toKana';
-  const expected = !current ? null : direction === 'toKana' ? current.char : direction === 'toMeaning' ? current.fr : current.romaji;
+  const expected = !current ? null
+    : direction === 'toKana' || direction === 'toWord' ? current.char
+      : direction === 'toMeaning' ? current.fr : current.romaji;
   const isCorrect = Boolean(session?.answered && current && session.selected === expected);
   const promptText = isWordSession
-    ? direction === 'toMeaning' ? 'Que veut dire ce mot ?' : 'Comment se lit ce mot ?'
+    ? direction === 'toMeaning' ? 'Que veut dire ce mot ?' : direction === 'toWord' ? "Comment s'écrit ce mot ?" : 'Comment se lit ce mot ?'
     : direction === 'toKana' ? 'Quel kana fait ce son ?' : 'Quel son fait ce kana ?';
-  const cardFace = !current ? '' : direction === 'toKana' ? current.romaji : current.char;
-  // La carte fait 230px : on réduit la police dès que la face dépasse un caractère.
-  const faceSize = cardFace.length > 4 ? 'xs' : cardFace.length > 2 ? 'sm' : cardFace.length > 1 ? 'md' : '';
-  const cardClass = `${isWordSession ? 'word' : direction === 'toKana' ? 'romaji' : ''} ${faceSize}`;
+  const cardFace = !current ? ''
+    : direction === 'toKana' ? current.romaji : direction === 'toWord' ? current.fr : current.char;
+  // La carte fait 230px : on réduit la police selon la longueur de la face.
+  const faceSize = direction === 'toWord'
+    ? cardFace.length > 12 ? 'xs' : cardFace.length > 6 ? 'sm' : ''
+    : cardFace.length > 4 ? 'xs' : cardFace.length > 2 ? 'sm' : cardFace.length > 1 ? 'md' : '';
+  const cardClass = `${isWordSession ? 'word' : ''} ${direction === 'toWord' ? 'fr' : direction === 'toKana' ? 'romaji' : ''} ${faceSize}`;
   useEffect(() => {
     if (!isCorrect) return;
     const timer = setTimeout(next, 700);
@@ -149,7 +155,7 @@ function App() {
 
   const choices = useMemo(() => {
     if (!current) return [];
-    const field = direction === 'toKana' ? 'char' : direction === 'toMeaning' ? 'fr' : 'romaji';
+    const field = direction === 'toKana' || direction === 'toWord' ? 'char' : direction === 'toMeaning' ? 'fr' : 'romaji';
     const others = session.pool.filter(k => k.romaji !== current.romaji && k[field] !== expected);
     const distractors = [...new Set(others.map(k => k[field]))];
     return shuffle([expected, ...shuffle(distractors).slice(0, 3)]);
@@ -208,8 +214,8 @@ function App() {
           ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} allowEither={data.script === 'both'} onGrade={gradeDrawing} />
           : <>
             <div className="prompt">{promptText}</div>
-            <button className={`kana-card ${cardClass}`} onClick={() => speak(current.char)}><span>{cardFace}</span><small>🔊 Écouter</small></button>
-            <div className={`choices ${direction === 'toKana' ? 'kana-choices' : ''} ${direction === 'toMeaning' ? 'text-choices' : ''}`}>
+            <button className={`kana-card ${cardClass}`} onClick={() => direction !== 'toWord' && speak(current.char)}><span>{cardFace}</span><small>{direction === 'toWord' ? '✏️ Retrouve l’écriture' : '🔊 Écouter'}</small></button>
+            <div className={`choices ${direction === 'toKana' ? 'kana-choices' : ''} ${direction === 'toWord' ? 'word-choices' : ''} ${direction === 'toMeaning' ? 'text-choices' : ''}`}>
               {choices.map(c => <button key={c} className={session.answered ? c === expected ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
             </div>
           </>}
