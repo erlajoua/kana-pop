@@ -9,11 +9,14 @@ const STORE = 'kana-pop-v1';
 const defaults = { xp: 0, streak: 0, lastDay: '', seen: {}, mastered: {}, script: 'both', sound: true };
 const load = () => { try { return { ...defaults, ...JSON.parse(localStorage.getItem(STORE)) }; } catch { return defaults; } };
 const shuffle = a => [...a].sort(() => Math.random() - .5);
-// Chaque carte tire son sens de question : kana ↔ son, et mot → lecture, → sens ou ← français.
-const wordAsks = ['reading', 'reading', 'meaning', 'word'];
+// Un mot se joue en deux étapes enchaînées, dans un sens ou dans l'autre :
+//   « fr » : parapluie → かさ → kasa   |   « ja » : かさ → kasa → parapluie
 const decorate = (cards, mode) => mode === 'words'
-  ? cards.map(w => ({ ...w, ask: wordAsks[Math.floor(Math.random() * wordAsks.length)] }))
+  ? cards.map(w => ({ ...w, chain: Math.random() < .5 ? 'fr' : 'ja' }))
   : cards.map(k => ({ ...k, dir: Math.random() < .5 ? 'toKana' : 'toRomaji' }));
+const wordDirection = (chain, step) => chain === 'fr'
+  ? step === 0 ? 'toWord' : 'toRomaji'
+  : step === 0 ? 'toRomaji' : 'toMeaning';
 const day = () => new Date().toISOString().slice(0, 10);
 
 function speak(text) {
@@ -63,7 +66,7 @@ function App() {
     const weak = pool.filter(k => !data.mastered[k.id]);
     const cards = decorate(shuffle(weak.length >= 4 ? weak : pool), trainingMode);
     setStage(ids);
-    setSession({ mode: trainingMode, pool, cards, index: 0, score: 0, answered: false, selected: null, misses: {} });
+    setSession({ mode: trainingMode, pool, cards, index: 0, step: 0, score: 0, answered: false, selected: null, misses: {} });
     setView('play');
   }
 
@@ -90,14 +93,19 @@ function App() {
   }
 
   function next() {
+    // Deuxième étape du même mot avant de passer au suivant.
+    if (session.mode === 'words' && session.step === 0) {
+      setSession(s => ({ ...s, step: 1, answered: false, selected: null }));
+      return;
+    }
     if (session.index + 1 >= session.cards.length) {
       setSession(s => {
         const retry = s.pool.filter(k => s.misses[k.id]);
         const weak = s.pool.filter(k => !data.mastered[k.id]);
         const refill = decorate(shuffle([...retry, ...weak, ...shuffle(s.pool)]).slice(0, Math.max(10, Math.min(20, s.pool.length))), s.mode);
-        return { ...s, cards: [...s.cards, ...refill], index: s.index + 1, answered: false, selected: null };
+        return { ...s, cards: [...s.cards, ...refill], index: s.index + 1, step: 0, answered: false, selected: null };
       });
-    } else setSession(s => ({ ...s, index: s.index + 1, answered: false, selected: null }));
+    } else setSession(s => ({ ...s, index: s.index + 1, step: 0, answered: false, selected: null }));
   }
 
   function finishSession() {
@@ -112,7 +120,7 @@ function App() {
     : session?.mode;
   const isWordSession = session?.mode === 'words';
   const direction = isWordSession
-    ? current?.ask === 'meaning' ? 'toMeaning' : current?.ask === 'word' ? 'toWord' : 'toRomaji'
+    ? wordDirection(current?.chain, session.step)
     : challengeMode === 'draw' || current?.dir !== 'toKana' ? 'toRomaji' : 'toKana';
   const expected = !current ? null
     : direction === 'toKana' || direction === 'toWord' ? current.char
@@ -128,6 +136,10 @@ function App() {
     ? cardFace.length > 12 ? 'xs' : cardFace.length > 6 ? 'sm' : ''
     : cardFace.length > 4 ? 'xs' : cardFace.length > 2 ? 'sm' : cardFace.length > 1 ? 'md' : '';
   const cardClass = `${isWordSession ? 'word' : ''} ${direction === 'toWord' ? 'fr' : direction === 'toKana' ? 'romaji' : ''} ${faceSize}`;
+  // Le rappel ne dévoile que ce qui est déjà acquis, sinon l'étape 2 est donnée d'avance.
+  const wordRecap = !current || !isWordSession ? '' : session.step === 1
+    ? `${current.char} • ${current.romaji} • ${current.fr}`
+    : direction === 'toWord' ? `${current.fr} → ${current.char}` : `${current.char} • ${current.romaji}`;
   useEffect(() => {
     if (!isCorrect) return;
     const timer = setTimeout(next, 700);
@@ -209,7 +221,7 @@ function App() {
       {view === 'grid' && <Grid data={data} setData={setData} back={() => setView('home')} />}
 
       {view === 'play' && current && <section className="play">
-        <div className="play-top"><button className="close" onClick={finishSession}>×</button><div className="bar"><i style={{width:`${((session.index % 10) + 1) * 10}%`}}/></div><span>∞ {session.index + 1}</span></div>
+        <div className="play-top"><button className="close" onClick={finishSession}>×</button><div className="bar"><i style={{width:`${((session.index % 10) + (isWordSession ? (session.step + 1) / 2 : 1)) * 10}%`}}/></div><span>∞ {session.index + 1}</span></div>
         {challengeMode === 'draw'
           ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} allowEither={data.script === 'both'} onGrade={gradeDrawing} />
           : <>
@@ -221,7 +233,7 @@ function App() {
           </>}
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
           {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${expected} »`}</b><span>{isWordSession
-            ? `${current.char} • ${current.romaji} • ${current.fr}`
+            ? wordRecap
             : <>{session.drawnScript ? `Tu as dessiné en ${session.drawnScript} • ` : ''}{current.script === 'hiragana' ? `Hiragana ${current.char} • Katakana ${current.pair}` : `Katakana ${current.char} • Hiragana ${current.pair}`} • {current.romaji}</>}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
         </div>
       </section>}
