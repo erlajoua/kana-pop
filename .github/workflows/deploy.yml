@@ -1,0 +1,28 @@
+name: Déploiement Netlify
+
+# La liaison Git de Netlify est restée bloquée sur un ancien commit :
+# ce job publie donc le contenu de main via le CLI, à chaque push.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: VITE_COMMIT_REF=$GITHUB_SHA npm run build
+      - name: Publier sur Netlify
+        run: npx --yes netlify-cli deploy --prod --dir=dist --message "main ${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
