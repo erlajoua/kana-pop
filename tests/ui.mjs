@@ -19,9 +19,9 @@ async function readCard() {
   const face = await page.locator('.kana-card span').innerText();
   const choices = await page.locator('.choices button').allTextContents();
   const reverse = /Quel kana/.test(prompt);
-  const word = words.find(w => w.char === face) || words.find(w => w.fr === face);
+  const word = words.find(w => w.char === face);
   const answer = word
-    ? /Que veut dire/.test(prompt) ? word.fr : /s.écrit/.test(prompt) ? word.char : word.romaji
+    ? /Que veut dire/.test(prompt) ? word.fr : word.romaji
     : reverse ? choices.find(c => kana.find(k => k.char === c)?.romaji === face)
       : kana.find(k => k.char === face)?.romaji;
   return { prompt, face, choices, reverse, word, answer, shownKana: reverse ? choices : [face] };
@@ -115,7 +115,6 @@ await page.locator('.mode-hint').waitFor();
 await page.getByRole('button', { name: /Réviser 2 modules/i }).click();
 await page.locator('.kana-card.word').waitFor();
 const allowedSounds = new Set(['a', 'i', 'u', 'e', 'o', 'ka', 'ki', 'ku', 'ke', 'ko', 'sa', 'shi', 'su', 'se', 'so']);
-const seenChains = new Set();
 for (let i = 0; i < 8; i++) {
   await page.locator('.kana-card').waitFor();
   const first = await readCard();
@@ -124,28 +123,31 @@ for (let i = 0; i < 8; i++) {
   if (!first.word.sounds.every(s => allowedSounds.has(s))) {
     errors.push(`${first.word.char} utilise des kana hors des modules choisis`);
   }
-  seenChains.add(/s.écrit/.test(first.prompt) ? 'fr' : 'ja');
+  // Étape 1 : toujours la lecture japonaise.
+  if (!/Comment se lit/.test(first.prompt)) {
+    errors.push(`Étape 1 de ${first.word.char} : « ${first.prompt} » au lieu de la lecture`);
+  }
   await clickChoice(first.choices, first.answer);
   await page.getByText('Ça repart…').waitFor();
 
-  // Le rappel de l'étape 1 ne doit pas donner la réponse de l'étape 2.
   // Comparaison exacte : « kaki » est un morceau de « kaki (fruit) », une
   // recherche de sous-chaîne accuserait à tort le rappel de fuiter la réponse.
   const recap = await page.locator('.feedback span').first().innerText();
-  const expectedRecap = /s.écrit/.test(first.prompt)
-    ? `${first.word.fr} → ${first.word.char}`
-    : `${first.word.char} • ${first.word.romaji}`;
+  const expectedRecap = `${first.word.char} • ${first.word.romaji}`;
   if (recap.trim() !== expectedRecap) {
     errors.push(`Étape 1 (${first.word.char}) : rappel « ${recap} », attendu « ${expectedRecap} »`);
   }
 
-  // Étape 2 : même mot, question complémentaire.
+  // Étape 2 : toujours le sens français, sur le même mot.
   await page.waitForFunction(
     previous => document.querySelector('.prompt')?.textContent !== previous,
     first.prompt, { timeout: 3000 }
   );
   const second = await readCard();
   await checkCardFits(`mot ${second.face}`);
+  if (!/Que veut dire/.test(second.prompt)) {
+    errors.push(`Étape 2 de ${first.word.char} : « ${second.prompt} » au lieu du sens`);
+  }
   if (second.word?.char !== first.word.char) {
     errors.push(`L'étape 2 porte sur ${second.word?.char} au lieu de ${first.word.char}`);
   }
@@ -156,9 +158,6 @@ for (let i = 0; i < 8; i++) {
     errors.push(`Le bilan final du mot ${first.word.char} est incomplet : ${full}`);
   }
   await page.getByText(`∞ ${i + 2}`, { exact: true }).waitFor({ timeout: 3000 });
-}
-if (seenChains.size !== 2) {
-  errors.push(`Les mots doivent partir tantôt du français tantôt du japonais, vu : ${[...seenChains].join(', ')}`);
 }
 
 console.log('✓ parcours séparés, questions dans les deux sens, module Mots et mode dessin canvas');
