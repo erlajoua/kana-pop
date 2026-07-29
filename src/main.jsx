@@ -118,9 +118,10 @@ function App() {
   const promptText = isWordSession
     ? direction === 'toMeaning' ? 'Que veut dire ce mot ?' : 'Comment se lit ce mot ?'
     : direction === 'toKana' ? 'Quel kana fait ce son ?' : 'Quel son fait ce kana ?';
-  const cardClass = isWordSession
-    ? `word ${current?.char.length > 3 ? 'long' : ''}`
-    : direction === 'toKana' ? 'romaji' : '';
+  const cardFace = !current ? '' : direction === 'toKana' ? current.romaji : current.char;
+  // La carte fait 230px : on réduit la police dès que la face dépasse un caractère.
+  const faceSize = cardFace.length > 4 ? 'xs' : cardFace.length > 2 ? 'sm' : cardFace.length > 1 ? 'md' : '';
+  const cardClass = `${isWordSession ? 'word' : direction === 'toKana' ? 'romaji' : ''} ${faceSize}`;
   useEffect(() => {
     if (!isCorrect) return;
     const timer = setTimeout(next, 700);
@@ -207,7 +208,7 @@ function App() {
           ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} allowEither={data.script === 'both'} onGrade={gradeDrawing} />
           : <>
             <div className="prompt">{promptText}</div>
-            <button className={`kana-card ${cardClass}`} onClick={() => speak(current.char)}><span>{direction === 'toKana' ? current.romaji : current.char}</span><small>🔊 Écouter</small></button>
+            <button className={`kana-card ${cardClass}`} onClick={() => speak(current.char)}><span>{cardFace}</span><small>🔊 Écouter</small></button>
             <div className={`choices ${direction === 'toKana' ? 'kana-choices' : ''} ${direction === 'toMeaning' ? 'text-choices' : ''}`}>
               {choices.map(c => <button key={c} className={session.answered ? c === expected ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
             </div>

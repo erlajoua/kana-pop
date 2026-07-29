@@ -27,6 +27,20 @@ async function readCard() {
   return { prompt, face, choices, reverse, word, answer, shownKana: reverse ? choices : [face] };
 }
 const clickChoice = (choices, text) => page.locator('.choices button').nth(choices.indexOf(text)).click();
+// La face de la carte (kana, combinaison ou mot) doit tenir dans les 230px.
+async function checkCardFits(label) {
+  const over = await page.evaluate(() => {
+    const card = document.querySelector('.kana-card').getBoundingClientRect();
+    const span = document.querySelector('.kana-card span').getBoundingClientRect();
+    const small = document.querySelector('.kana-card small').getBoundingClientRect();
+    return Math.round(Math.max(
+      span.bottom - card.bottom, card.top - span.top,
+      span.right - card.right, card.left - span.left,
+      small.bottom - card.bottom
+    ));
+  });
+  if (over > 0) errors.push(`${label} : la face déborde de la carte de ${over}px`);
+}
 async function answerCard({ right = true } = {}) {
   const card = await readCard();
   const target = right ? card.answer : card.choices.find(c => c !== card.answer);
@@ -68,6 +82,7 @@ await page.getByText('∞ 3', { exact: true }).waitFor({ timeout: 2000 });
 const seenDirections = new Set();
 for (let i = 3; i < 16; i++) {
   await page.locator('.kana-card').waitFor();
+  await checkCardFits('quiz');
   const card = await answerCard();
   seenDirections.add(card.reverse ? 'kana' : 'romaji');
   await page.getByText(`∞ ${i + 1}`, { exact: true }).waitFor({ timeout: 2000 });
@@ -103,6 +118,7 @@ const allowedSounds = new Set(['a', 'i', 'u', 'e', 'o', 'ka', 'ki', 'ku', 'ke', 
 for (let i = 0; i < 6; i++) {
   await page.locator('.kana-card').waitFor();
   const card = await readCard();
+  await checkCardFits(`mot ${card.face}`);
   if (!card.word) { errors.push(`Mot inconnu affiché : ${card.face}`); break; }
   if (!card.word.sounds.every(s => allowedSounds.has(s))) {
     errors.push(`${card.word.char} utilise des kana hors des modules choisis`);
