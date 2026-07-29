@@ -48,7 +48,7 @@ async function answerCard({ right = true } = {}) {
   return card;
 }
 
-await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await page.goto(process.env.APP_URL || 'http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 await page.evaluate(() => {
   const saved = JSON.parse(localStorage.getItem('kana-pop-v1') || '{}');
   localStorage.setItem('kana-pop-v1', JSON.stringify({ ...saved, sound: false }));

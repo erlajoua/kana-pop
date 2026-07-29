@@ -332,6 +332,9 @@ function DrawChallenge({ card, answered, allowEither, onGrade }) {
   </div>;
 }
 
+// Permet de savoir d'un coup d'œil quelle version est réellement servie.
+const version = (import.meta.env.VITE_COMMIT_REF || 'dev').slice(0, 7);
+
 function Grid({ data, setData, back }) {
   const [filter, setFilter] = useState(data.script === 'both' ? 'hiragana' : data.script);
   const list = kana.filter(k => k.script === filter);
@@ -340,7 +343,7 @@ function Grid({ data, setData, back }) {
     <p>92 kana de base + 50 variantes voisées + 66 combinaisons. Appuie sur une carte pour l'écouter.</p>
     <div className="tabs"><button className={filter === 'hiragana' ? 'active':''} onClick={() => setFilter('hiragana')}>Hiragana</button><button className={filter === 'katakana' ? 'active':''} onClick={() => setFilter('katakana')}>Katakana</button></div>
     <div className="kana-grid">{list.map(k => <button key={k.id} className={data.mastered[k.id] ? 'learned':''} onClick={() => speak(k.char)}><b>{k.char}</b><span>{k.romaji}</span>{data.mastered[k.id] && <i>✓</i>}</button>)}</div>
-    <div className="settings"><h2>Réglages</h2><label>Je veux apprendre <select value={data.script} onChange={e => setData(d => ({...d, script:e.target.value}))}><option value="both">Les deux alphabets</option><option value="hiragana">Hiragana seulement</option><option value="katakana">Katakana seulement</option></select></label><label><span>Prononciation automatique</span><input type="checkbox" checked={data.sound} onChange={e => setData(d => ({...d, sound:e.target.checked}))}/></label></div>
+    <div className="settings"><h2>Réglages</h2><label>Je veux apprendre <select value={data.script} onChange={e => setData(d => ({...d, script:e.target.value}))}><option value="both">Les deux alphabets</option><option value="hiragana">Hiragana seulement</option><option value="katakana">Katakana seulement</option></select></label><label><span>Prononciation automatique</span><input type="checkbox" checked={data.sound} onChange={e => setData(d => ({...d, sound:e.target.checked}))}/></label><label><span>Version installée</span><code>{version}</code></label></div>
   </section>;
 }
 
