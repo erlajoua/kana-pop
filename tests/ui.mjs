@@ -1,9 +1,10 @@
 import { chromium } from 'playwright';
 import { kana } from '../src/kana.js';
+import { words } from '../src/words.js';
 
 const browser = await chromium.launch({
   headless: true,
-  executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  executablePath: process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
@@ -11,6 +12,28 @@ page.on('pageerror', error => errors.push(error.stack || error.message));
 page.on('console', message => {
   if (message.type() === 'error') errors.push(message.text());
 });
+
+// Lit la carte affichée : sens de la question, choix proposés et bonne réponse.
+async function readCard() {
+  const prompt = await page.locator('.prompt').innerText();
+  const face = await page.locator('.kana-card span').innerText();
+  const choices = await page.locator('.choices button').allTextContents();
+  const reverse = /Quel kana/.test(prompt);
+  const word = words.find(w => w.char === face);
+  const answer = word
+    ? /Que veut dire/.test(prompt) ? word.fr : word.romaji
+    : reverse ? choices.find(c => kana.find(k => k.char === c)?.romaji === face)
+      : kana.find(k => k.char === face)?.romaji;
+  return { prompt, face, choices, reverse, word, answer, shownKana: reverse ? choices : [face] };
+}
+const clickChoice = (choices, text) => page.locator('.choices button').nth(choices.indexOf(text)).click();
+async function answerCard({ right = true } = {}) {
+  const card = await readCard();
+  const target = right ? card.answer : card.choices.find(c => c !== card.answer);
+  await clickChoice(card.choices, target);
+  return card;
+}
+
 await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 await page.evaluate(() => {
   const saved = JSON.parse(localStorage.getItem('kana-pop-v1') || '{}');
@@ -20,29 +43,39 @@ await page.reload({ waitUntil: 'networkidle' });
 await page.getByRole('button', { name: /Hiragana/i }).click();
 await page.getByRole('button', { name: /Spammer la sélection/i }).click();
 await page.locator('.kana-card').waitFor();
-const hiraganaChar = await page.locator('.kana-card span').innerText();
-if (kana.find(k => k.char === hiraganaChar)?.script !== 'hiragana') {
-  errors.push(`Le parcours Hiragana a affiché ${hiraganaChar}`);
+
+const first = await readCard();
+if (!first.shownKana.every(c => kana.find(k => k.char === c)?.script === 'hiragana')) {
+  errors.push(`Le parcours Hiragana a affiché ${first.shownKana.join(', ')}`);
 }
-const vowelChoices = await page.locator('.choices button').allTextContents();
-const allowedVowels = new Set(['a', 'i', 'u', 'e', 'o']);
-if (!vowelChoices.every(choice => allowedVowels.has(choice))) {
-  errors.push(`Le module Voyelles contient des choix hors module : ${vowelChoices.join(', ')}`);
+const allowedVowels = new Set(first.reverse ? ['あ', 'い', 'う', 'え', 'お'] : ['a', 'i', 'u', 'e', 'o']);
+if (!first.choices.every(choice => allowedVowels.has(choice))) {
+  errors.push(`Le module Voyelles contient des choix hors module : ${first.choices.join(', ')}`);
 }
-if (new Set(vowelChoices).size !== 4) {
-  errors.push(`Les quatre choix Voyelles doivent être distincts : ${vowelChoices.join(', ')}`);
+if (new Set(first.choices).size !== 4) {
+  errors.push(`Les quatre choix Voyelles doivent être distincts : ${first.choices.join(', ')}`);
 }
-const firstChar = await page.locator('.kana-card span').innerText();
-const rightAnswer = kana.find(k => k.char === firstChar)?.romaji;
-await page.locator('.choices button').filter({ hasText: new RegExp(`^${rightAnswer}$`) }).click();
+
+await clickChoice(first.choices, first.answer);
 await page.getByText('Ça repart…').waitFor();
 await page.getByText('∞ 2', { exact: true }).waitFor({ timeout: 2000 });
 await page.locator('.kana-card').waitFor();
-const secondChar = await page.locator('.kana-card span').innerText();
-const secondAnswer = kana.find(k => k.char === secondChar)?.romaji;
-await page.locator('.choices button').filter({ hasNotText: new RegExp(`^${secondAnswer}$`) }).first().click();
+await answerCard({ right: false });
 await page.keyboard.press('Enter');
 await page.getByText('∞ 3', { exact: true }).waitFor({ timeout: 2000 });
+
+// Les deux sens de question doivent apparaître sur une série un peu longue.
+const seenDirections = new Set();
+for (let i = 3; i < 16; i++) {
+  await page.locator('.kana-card').waitFor();
+  const card = await answerCard();
+  seenDirections.add(card.reverse ? 'kana' : 'romaji');
+  await page.getByText(`∞ ${i + 1}`, { exact: true }).waitFor({ timeout: 2000 });
+}
+if (seenDirections.size !== 2) {
+  errors.push(`Les questions restent dans un seul sens : ${[...seenDirections].join(', ')}`);
+}
+
 await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();
 await page.locator('.stage').filter({ hasText: 'K & S' }).click();
@@ -52,10 +85,39 @@ await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();
 await page.getByRole('button', { name: /Katakana/i }).click();
 await page.getByRole('button', { name: /Réviser 2 modules/i }).click();
-const katakanaChar = await page.locator('.kana-card span').innerText();
-if (kana.find(k => k.char === katakanaChar)?.script !== 'katakana') {
-  errors.push(`Le parcours Katakana a affiché ${katakanaChar}`);
+await page.locator('.kana-card').waitFor();
+const katakanaCard = await readCard();
+if (!katakanaCard.shownKana.every(c => kana.find(k => k.char === c)?.script === 'katakana')) {
+  errors.push(`Le parcours Katakana a affiché ${katakanaCard.shownKana.join(', ')}`);
 }
+await page.getByRole('button', { name: '×' }).click();
+await page.getByRole('button', { name: /Retour au parcours/i }).click();
+
+// Module Mots : uniquement des mots lisibles avec les modules cochés.
+await page.getByRole('button', { name: /Hiragana/i }).click();
+await page.locator('.mode-picker button').filter({ hasText: 'Mots' }).click();
+await page.locator('.mode-hint').waitFor();
+await page.getByRole('button', { name: /Réviser 2 modules/i }).click();
+await page.locator('.kana-card.word').waitFor();
+const allowedSounds = new Set(['a', 'i', 'u', 'e', 'o', 'ka', 'ki', 'ku', 'ke', 'ko', 'sa', 'shi', 'su', 'se', 'so']);
+for (let i = 0; i < 6; i++) {
+  await page.locator('.kana-card').waitFor();
+  const card = await readCard();
+  if (!card.word) { errors.push(`Mot inconnu affiché : ${card.face}`); break; }
+  if (!card.word.sounds.every(s => allowedSounds.has(s))) {
+    errors.push(`${card.word.char} utilise des kana hors des modules choisis`);
+  }
+  await clickChoice(card.choices, card.answer);
+  await page.getByText('Ça repart…').waitFor();
+  const feedback = await page.locator('.feedback span').first().innerText();
+  if (!feedback.includes(card.word.fr) || !feedback.includes(card.word.romaji)) {
+    errors.push(`Le rappel du mot ${card.word.char} manque sa lecture ou sa traduction : ${feedback}`);
+  }
+  await page.getByText(`∞ ${i + 2}`, { exact: true }).waitFor({ timeout: 2000 });
+}
+
+console.log('✓ parcours séparés, questions dans les deux sens, module Mots et mode dessin canvas');
+
 await page.getByRole('button', { name: '×' }).click();
 await page.getByRole('button', { name: /Retour au parcours/i }).click();
 await page.getByRole('button', { name: /Mixte/i }).click();
@@ -84,7 +146,6 @@ if (!summary.toLowerCase().includes('hiragana') || !summary.toLowerCase().includ
 }
 await page.getByText(/Tu as dessiné en katakana/i).waitFor();
 await page.getByText('Ça repart…').waitFor();
-console.log('✓ parcours séparés, modules combinés, touche Entrée et mode dessin canvas');
 if (errors.length) console.log('errors=', errors);
 await browser.close();
 if (errors.length) process.exitCode = 1;

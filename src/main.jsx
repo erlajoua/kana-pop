@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { kana, stages, getStageKana } from './kana.js';
+import { getWordsForKana } from './words.js';
 import { recognizeKana } from './recognizer.js';
 import './styles.css';
 
@@ -8,6 +9,10 @@ const STORE = 'kana-pop-v1';
 const defaults = { xp: 0, streak: 0, lastDay: '', seen: {}, mastered: {}, script: 'both', sound: true };
 const load = () => { try { return { ...defaults, ...JSON.parse(localStorage.getItem(STORE)) }; } catch { return defaults; } };
 const shuffle = a => [...a].sort(() => Math.random() - .5);
+// Chaque carte tire son sens de question : kana → son, son → kana, mot → lecture ou sens.
+const decorate = (cards, mode) => mode === 'words'
+  ? cards.map(w => ({ ...w, ask: Math.random() < .35 ? 'meaning' : 'reading' }))
+  : cards.map(k => ({ ...k, dir: Math.random() < .5 ? 'toKana' : 'toRomaji' }));
 const day = () => new Date().toISOString().slice(0, 10);
 
 function speak(text) {
@@ -44,12 +49,18 @@ function App() {
   const totalForScript = data.script === 'both' ? kana.length : kana.length / 2;
   const pct = Math.round(mastered / totalForScript * 100);
   const scriptName = data.script === 'hiragana' ? 'Hiragana' : data.script === 'katakana' ? 'Katakana' : 'Mixte';
+  const wordCount = useMemo(
+    () => getWordsForKana(selectedStages.flatMap(id => getStageKana(id, data.script))).length,
+    [selectedStages, data.script]
+  );
 
   function start(stageIds = selectedStages) {
     const ids = Array.isArray(stageIds) ? stageIds : [stageIds];
-    const pool = ids.flatMap(id => getStageKana(id, data.script));
+    const stageKana = ids.flatMap(id => getStageKana(id, data.script));
+    const pool = trainingMode === 'words' ? getWordsForKana(stageKana) : stageKana;
+    if (!pool.length) { setToast('Aucun mot ne tient avec ces kana : ajoute un module 🌱'); return; }
     const weak = pool.filter(k => !data.mastered[k.id]);
-    const cards = shuffle(weak.length >= 4 ? weak : pool);
+    const cards = decorate(shuffle(weak.length >= 4 ? weak : pool), trainingMode);
     setStage(ids);
     setSession({ mode: trainingMode, pool, cards, index: 0, score: 0, answered: false, selected: null, misses: {} });
     setView('play');
@@ -58,7 +69,7 @@ function App() {
   function answer(choice, meta = {}) {
     if (session.answered) return;
     const card = session.cards[session.index];
-    const ok = choice === card.romaji;
+    const ok = choice === expected;
     setSession(s => ({
       ...s, answered: true, selected: choice, score: s.score + (ok ? 1 : 0),
       drawnScript: meta.drawnScript || null,
@@ -82,7 +93,7 @@ function App() {
       setSession(s => {
         const retry = s.pool.filter(k => s.misses[k.id]);
         const weak = s.pool.filter(k => !data.mastered[k.id]);
-        const refill = shuffle([...retry, ...weak, ...shuffle(s.pool)]).slice(0, Math.max(10, Math.min(20, s.pool.length)));
+        const refill = decorate(shuffle([...retry, ...weak, ...shuffle(s.pool)]).slice(0, Math.max(10, Math.min(20, s.pool.length))), s.mode);
         return { ...s, cards: [...s.cards, ...refill], index: s.index + 1, answered: false, selected: null };
       });
     } else setSession(s => ({ ...s, index: s.index + 1, answered: false, selected: null }));
@@ -98,7 +109,18 @@ function App() {
   const challengeMode = session?.mode === 'mixed'
     ? (session.index % 2 === 0 ? 'quiz' : 'draw')
     : session?.mode;
-  const isCorrect = Boolean(session?.answered && current && session.selected === current.romaji);
+  const isWordSession = session?.mode === 'words';
+  const direction = isWordSession
+    ? (current?.ask === 'meaning' ? 'toMeaning' : 'toRomaji')
+    : challengeMode === 'draw' || current?.dir !== 'toKana' ? 'toRomaji' : 'toKana';
+  const expected = !current ? null : direction === 'toKana' ? current.char : direction === 'toMeaning' ? current.fr : current.romaji;
+  const isCorrect = Boolean(session?.answered && current && session.selected === expected);
+  const promptText = isWordSession
+    ? direction === 'toMeaning' ? 'Que veut dire ce mot ?' : 'Comment se lit ce mot ?'
+    : direction === 'toKana' ? 'Quel kana fait ce son ?' : 'Quel son fait ce kana ?';
+  const cardClass = isWordSession
+    ? `word ${current?.char.length > 3 ? 'long' : ''}`
+    : direction === 'toKana' ? 'romaji' : '';
   useEffect(() => {
     if (!isCorrect) return;
     const timer = setTimeout(next, 700);
@@ -126,13 +148,11 @@ function App() {
 
   const choices = useMemo(() => {
     if (!current) return [];
-    const relevantRomaji = [...new Set(
-      session.pool
-        .filter(k => k.romaji !== current.romaji)
-        .map(k => k.romaji)
-    )];
-    return shuffle([current.romaji, ...shuffle(relevantRomaji).slice(0, 3)]);
-  }, [current, session?.pool]);
+    const field = direction === 'toKana' ? 'char' : direction === 'toMeaning' ? 'fr' : 'romaji';
+    const others = session.pool.filter(k => k.romaji !== current.romaji && k[field] !== expected);
+    const distractors = [...new Set(others.map(k => k[field]))];
+    return shuffle([expected, ...shuffle(distractors).slice(0, 3)]);
+  }, [current, session?.pool, direction]);
 
   return <div className="app">
     <header>
@@ -155,7 +175,9 @@ function App() {
             <button className={trainingMode === 'quiz' ? 'active' : ''} onClick={() => setTrainingMode('quiz')}><b>👀</b><span>Reconnaître</span></button>
             <button className={trainingMode === 'draw' ? 'active' : ''} onClick={() => setTrainingMode('draw')}><b>✍️</b><span>Écrire</span></button>
             <button className={trainingMode === 'mixed' ? 'active' : ''} onClick={() => setTrainingMode('mixed')}><b>⚡</b><span>Les deux</span></button>
+            <button className={trainingMode === 'words' ? 'active' : ''} onClick={() => setTrainingMode('words')}><b>📖</b><span>Mots</span></button>
           </div>
+          {trainingMode === 'words' && <p className="mode-hint">{wordCount ? `${wordCount} mots lisibles avec les modules sélectionnés.` : 'Sélectionne plus de modules pour débloquer des mots.'}</p>}
           <button className="primary big" onClick={() => start()}>Spammer la sélection <b>∞</b></button>
         </section>
         <section className="progress-card">
@@ -184,21 +206,23 @@ function App() {
         {challengeMode === 'draw'
           ? <DrawChallenge key={`${current.id}-${session.index}`} card={current} answered={session.answered} allowEither={data.script === 'both'} onGrade={gradeDrawing} />
           : <>
-            <div className="prompt">Quel son fait ce kana ?</div>
-            <button className="kana-card" onClick={() => speak(current.char)}><span>{current.char}</span><small>🔊 Écouter</small></button>
-            <div className="choices">
-              {choices.map(c => <button key={c} className={session.answered ? c === current.romaji ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
+            <div className="prompt">{promptText}</div>
+            <button className={`kana-card ${cardClass}`} onClick={() => speak(current.char)}><span>{direction === 'toKana' ? current.romaji : current.char}</span><small>🔊 Écouter</small></button>
+            <div className={`choices ${direction === 'toKana' ? 'kana-choices' : ''} ${direction === 'toMeaning' ? 'text-choices' : ''}`}>
+              {choices.map(c => <button key={c} className={session.answered ? c === expected ? 'right' : c === session.selected ? 'wrong' : '' : ''} onClick={() => answer(c)}>{c}</button>)}
             </div>
           </>}
         <div className={`feedback ${session.answered ? 'show' : ''}`}>
-          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${current.romaji} »`}</b><span>{session.drawnScript ? `Tu as dessiné en ${session.drawnScript} • ` : ''}{current.script === 'hiragana' ? `Hiragana ${current.char} • Katakana ${current.pair}` : `Katakana ${current.char} • Hiragana ${current.pair}`} • {current.romaji}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
+          {session.answered && <><div><b>{isCorrect ? 'Bravo ! 🎉' : `C'était « ${expected} »`}</b><span>{isWordSession
+            ? `${current.char} • ${current.romaji} • ${current.fr}`
+            : <>{session.drawnScript ? `Tu as dessiné en ${session.drawnScript} • ` : ''}{current.script === 'hiragana' ? `Hiragana ${current.char} • Katakana ${current.pair}` : `Katakana ${current.char} • Hiragana ${current.pair}`} • {current.romaji}</>}</span></div>{isCorrect ? <span className="auto-next">Ça repart…</span> : <button onClick={next}>Encore →</button>}</>}
         </div>
       </section>}
 
       {view === 'result' && <section className="result">
         <div className="confetti">🎉</div><span>PAUSE BIEN MÉRITÉE</span><h1>{session.score}/{session.index + 1}</h1>
         <h2>{session.score >= 8 ? 'すごい！ Incroyable !' : session.score >= 5 ? 'Bien joué !' : 'Chaque essai compte !'}</h2>
-        <p>{session.index + 1} kana révisés • le module n'est jamais terminé</p>
+        <p>{session.index + 1} {session.mode === 'words' ? 'mots lus' : 'kana révisés'} • le module n'est jamais terminé</p>
         <button className="primary big" onClick={() => start(stage)}>Continuer à spammer ∞</button>
         <button className="text-btn" onClick={() => setView('home')}>Retour au parcours</button>
       </section>}
